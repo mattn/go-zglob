@@ -46,21 +46,11 @@ func Glob(pattern string) ([]string, error) {
 		}
 	}
 	if root == "" {
-		path, _ := filepath.Abs(pattern)
-		fi, err := os.Stat(path)
+		_, err := os.Stat(pattern)
 		if err != nil {
-			return nil, fmt.Errorf("%s: No such file or directory", pattern)
+			return nil, os.ErrNotExist
 		}
-		if !fi.IsDir() {
-			return []string{path}, nil
-		} else {
-			root = path
-			if fi.IsDir() {
-				globmask = "**/*"
-			} else {
-				globmask = "**/" + globmask
-			}
-		}
+		return []string{pattern}, nil
 	}
 	if globmask == "" {
 		globmask = "."
@@ -126,6 +116,9 @@ func Glob(pattern string) ([]string, error) {
 		}
 
 		if fre.MatchString(path) {
+			if filepath.IsAbs(path) {
+				path = path[len(root)+1:]
+			}
 			matches = append(matches, path)
 		}
 		return nil
