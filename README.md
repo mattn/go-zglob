@@ -1,5 +1,7 @@
 # go-zglob
 
+[![Build Status](https://travis-ci.org/mattn/go-zglob.svg)](https://travis-ci.org/mattn/go-zglob)
+
 zglob
 
 ## Usage
