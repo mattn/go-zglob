@@ -6,7 +6,7 @@ zglob
 
 ## Usage
 
-```
+```go
 matches, err := zglob.Glob(`./foo/b*/**/z*.txt`)
 ```
 
