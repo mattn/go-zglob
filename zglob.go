@@ -17,6 +17,7 @@ func Glob(pattern string) ([]string, error) {
 	globmask := ""
 	root := ""
 	matches := []string{}
+	relative := !filepath.IsAbs(pattern)
 	for n, i := range strings.Split(filepath.ToSlash(pattern), "/") {
 		if root == "" && strings.Index(i, "*") != -1 {
 			if globmask == "" {
@@ -116,7 +117,7 @@ func Glob(pattern string) ([]string, error) {
 		}
 
 		if fre.MatchString(path) {
-			if filepath.IsAbs(path) {
+			if relative && filepath.IsAbs(path) {
 				path = path[len(root)+1:]
 			}
 			matches = append(matches, path)
