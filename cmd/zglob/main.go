@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/mattn/go-zglob"
 	"os"
+
+	"github.com/mattn/go-zglob"
 )
 
 func main() {
@@ -13,7 +14,9 @@ func main() {
 			continue
 		}
 		for _, m := range matches {
-			fmt.Println(m)
+			if fi, err := os.Stat(m); err == nil && fi.Mode().IsRegular() {
+				fmt.Println(m)
+			}
 		}
 	}
 }
