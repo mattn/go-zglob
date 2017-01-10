@@ -7,11 +7,16 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+
+	"github.com/facebookgo/symwalk"
 )
 
 var (
 	envre = regexp.MustCompile(`^(\$[a-zA-Z][a-zA-Z0-9_]+|\$\([a-zA-Z][a-zA-Z0-9_]+\))$`)
 )
+
+const darwin string = "darwin"
+const windows string = "windows"
 
 type zenv struct {
 	dre  *regexp.Regexp
@@ -31,7 +36,7 @@ func makePattern(pattern string) (*zenv, error) {
 			}
 		}
 		if n == 0 && i == "~" {
-			if runtime.GOOS == "windows" {
+			if runtime.GOOS == windows {
 				i = os.Getenv("USERPROFILE")
 			} else {
 				i = os.Getenv("HOME")
@@ -43,7 +48,7 @@ func makePattern(pattern string) (*zenv, error) {
 
 		globmask = filepath.Join(globmask, i)
 		if n == 0 {
-			if runtime.GOOS == "windows" && filepath.VolumeName(i) != "" {
+			if runtime.GOOS == windows && filepath.VolumeName(i) != "" {
 				globmask = i + "/"
 			} else if len(globmask) == 0 {
 				globmask = "/"
@@ -95,7 +100,7 @@ func makePattern(pattern string) (*zenv, error) {
 		}
 		filemask += "[^/]*"
 	}
-	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+	if runtime.GOOS == windows || runtime.GOOS == darwin {
 		dirmask = "(?i:" + dirmask + ")"
 		filemask = "(?i:" + filemask + ")"
 	}
@@ -106,6 +111,8 @@ func makePattern(pattern string) (*zenv, error) {
 	}, nil
 }
 
+// Glob walks the root directory of the pattern provided
+// returning matching entries to pattern
 func Glob(pattern string) ([]string, error) {
 	zenv, err := makePattern(pattern)
 	if err != nil {
@@ -121,7 +128,7 @@ func Glob(pattern string) ([]string, error) {
 	relative := !filepath.IsAbs(pattern)
 	matches := []string{}
 
-	filepath.Walk(zenv.root, func(path string, info os.FileInfo, err error) error {
+	symwalk.Walk(zenv.root, func(path string, info os.FileInfo, err error) error {
 		if info == nil {
 			return err
 		}
@@ -148,6 +155,8 @@ func Glob(pattern string) ([]string, error) {
 	return matches, nil
 }
 
+// Match matches the name passed in to the pattern
+// returning true if matched, false otherwise
 func Match(pattern, name string) (matched bool, err error) {
 	zenv, err := makePattern(pattern)
 	if err != nil {

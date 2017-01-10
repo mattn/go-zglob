@@ -27,14 +27,14 @@ var testGlobs = []testZGlob{
 	{`foo/*`, []string{`foo/bar`, `foo/baz`}, nil},
 	{`foo/**`, []string{`foo/bar`, `foo/baz`}, nil},
 	{`f*o/**`, []string{`foo/bar`, `foo/baz`}, nil},
-	{`*oo/**`, []string{`foo/bar`, `foo/baz`, `hoo/bar`}, nil},
-	{`*oo/b*`, []string{`foo/bar`, `foo/baz`, `hoo/bar`}, nil},
-	{`*oo/*z`, []string{`foo/baz`}, nil},
+	{`*oo/**`, []string{`foo/bar`, `foo/baz`, `hoo/bar`, `symfoo/bar`, `symfoo/baz`}, nil},
+	{`*oo/b*`, []string{`foo/bar`, `foo/baz`, `hoo/bar`, `symfoo/bar`, `symfoo/baz`}, nil},
+	{`*oo/*z`, []string{`foo/baz`, `symfoo/baz`}, nil},
 	{`foo/**/*`, []string{`foo/bar`, `foo/bar/baz`, `foo/bar/baz.txt`, `foo/bar/baz/noo.txt`, `foo/baz`}, nil},
-	{`*oo/**/*`, []string{`foo/bar`, `foo/bar/baz`, `foo/bar/baz.txt`, `foo/bar/baz/noo.txt`, `foo/baz`, `hoo/bar`}, nil},
+	{`*oo/**/*`, []string{`foo/bar`, `foo/bar/baz`, `foo/bar/baz.txt`, `foo/bar/baz/noo.txt`, `foo/baz`, `hoo/bar`, `symfoo/bar`, `symfoo/bar/baz`, `symfoo/bar/baz.txt`, `symfoo/bar/baz/noo.txt`, `symfoo/baz`}, nil},
 	{`*oo/*.txt`, []string{}, nil},
-	{`*oo/*/*.txt`, []string{`foo/bar/baz.txt`}, nil},
-	{`*oo/**/*.txt`, []string{`foo/bar/baz.txt`, `foo/bar/baz/noo.txt`}, nil},
+	{`*oo/*/*.txt`, []string{`foo/bar/baz.txt`, `symfoo/bar/baz.txt`}, nil},
+	{`*oo/**/*.txt`, []string{`foo/bar/baz.txt`, `foo/bar/baz/noo.txt`, `symfoo/bar/baz.txt`, `symfoo/bar/baz/noo.txt`}, nil},
 	{`doo`, nil, os.ErrNotExist},
 	{`./f*`, []string{`foo`}, nil},
 }
@@ -52,6 +52,7 @@ func setup(t *testing.T) string {
 	ioutil.WriteFile(filepath.Join(tmpdir, "foo/bar/baz/noo.txt"), []byte{}, 0644)
 	os.MkdirAll(filepath.Join(tmpdir, "hoo/bar"), 0755)
 	ioutil.WriteFile(filepath.Join(tmpdir, "foo/bar/baz.txt"), []byte{}, 0644)
+	os.Symlink(filepath.Join(tmpdir, "foo"), filepath.Join(tmpdir, "symfoo"))
 
 	return tmpdir
 }
