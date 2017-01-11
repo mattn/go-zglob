@@ -72,6 +72,10 @@ func TestGlob(t *testing.T) {
 
 	tmpdir = "."
 	for _, test := range testGlobs {
+		expected := make([]string, len(test.expected))
+		for i, e := range test.expected {
+			expected[i] = e
+		}
 		got, err := Glob(test.pattern)
 		if err != nil {
 			if test.err != err {
@@ -79,8 +83,8 @@ func TestGlob(t *testing.T) {
 			}
 			continue
 		}
-		if !check(test.expected, got) {
-			t.Errorf(`zglob failed: pattern %q: expected %v but got %v`, test.pattern, test.expected, got)
+		if !check(expected, got) {
+			t.Errorf(`zglob failed: pattern %q(%q): expected %v but got %v`, test.pattern, tmpdir, expected, got)
 		}
 	}
 }
@@ -100,12 +104,12 @@ func TestGlobAbs(t *testing.T) {
 	defer os.Chdir(curdir)
 
 	for _, test := range testGlobs {
-		test.pattern = filepath.ToSlash(filepath.Join(tmpdir, test.pattern))
+		pattern := filepath.ToSlash(filepath.Join(tmpdir, test.pattern))
 		expected := make([]string, len(test.expected))
 		for i, e := range test.expected {
 			expected[i] = filepath.ToSlash(filepath.Join(tmpdir, e))
 		}
-		got, err := Glob(test.pattern)
+		got, err := Glob(pattern)
 		if err != nil {
 			if test.err != err {
 				t.Error(err)
@@ -113,7 +117,7 @@ func TestGlobAbs(t *testing.T) {
 			continue
 		}
 		if !check(expected, got) {
-			t.Errorf(`zglob failed: pattern %q: expected %v but got %v`, test.pattern, test.expected, got)
+			t.Errorf(`zglob failed: pattern %q(%q): expected %v but got %v`, pattern, tmpdir, expected, got)
 		}
 	}
 }

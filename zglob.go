@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+
+	"github.com/mattn/go-zglob/fastwalk"
 )
 
 var (
@@ -121,11 +123,10 @@ func Glob(pattern string) ([]string, error) {
 	relative := !filepath.IsAbs(pattern)
 	matches := []string{}
 
-	filepath.Walk(zenv.root, func(path string, info os.FileInfo, err error) error {
-		if info == nil {
-			return err
+	fastwalk.FastWalk(zenv.root, func(path string, info os.FileMode) error {
+		if zenv.root == "." && len(zenv.root) < len(path) {
+			path = path[len(zenv.root)+1:]
 		}
-
 		path = filepath.ToSlash(path)
 
 		if info.IsDir() {
