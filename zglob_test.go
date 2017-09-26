@@ -136,3 +136,33 @@ func TestMatch(t *testing.T) {
 		}
 	}
 }
+
+func TestSymlink(t *testing.T) {
+	tmpdir, err := ioutil.TempDir("", "zglob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.MkdirAll(filepath.Join(tmpdir, "foo/baz"), 0755)
+	os.Symlink(filepath.Join(tmpdir, "foo/baz"), filepath.Join(tmpdir, "foo/bar"))
+	defer os.RemoveAll(tmpdir)
+
+	curdir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.Chdir(tmpdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(curdir)
+
+	got, err := Glob("**/*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := []string{"foo", "foo/baz"}
+
+	if !check(expected, got) {
+		t.Errorf(`zglob failed: expected %v but got %v`, expected, got)
+	}
+}

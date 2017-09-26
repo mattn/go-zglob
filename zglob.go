@@ -140,7 +140,7 @@ func Glob(pattern string) ([]string, error) {
 			}
 		}
 
-		if zenv.fre.MatchString(path) {
+		if zenv.fre.MatchString(path) && info&os.ModeSymlink == 0 {
 			if relative && filepath.IsAbs(path) {
 				path = path[len(zenv.root)+1:]
 			}
