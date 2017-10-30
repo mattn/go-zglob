@@ -136,3 +136,39 @@ func TestMatch(t *testing.T) {
 		}
 	}
 }
+
+func TestFollowSymlinks(t *testing.T) {
+	tmpdir, err := ioutil.TempDir("", "zglob")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	os.MkdirAll(filepath.Join(tmpdir, "foo"), 0755)
+	ioutil.WriteFile(filepath.Join(tmpdir, "foo/baz.txt"), []byte{}, 0644)
+	defer os.RemoveAll(tmpdir)
+
+	err = os.Symlink(filepath.Join(tmpdir, "foo"), filepath.Join(tmpdir, "bar"))
+	if err != nil {
+		t.Skip(err.Error())
+	}
+
+	curdir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.Chdir(tmpdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(curdir)
+
+	got, err := GlobFollowSymlinks("**/*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := []string{"foo", "foo/baz.txt", "bar/baz.txt"}
+
+	if !check(expected, got) {
+		t.Errorf(`zglob failed: expected %v but got %v`, expected, got)
+	}
+}
