@@ -73,7 +73,9 @@ func makePattern(pattern string) (*zenv, error) {
 		if cc[i] == '*' {
 			if i < len(cc)-2 && cc[i+1] == '*' && cc[i+2] == '/' {
 				filemask += "(.*/)?"
-				dirmask = filemask
+				if dirmask == "" {
+					dirmask = filemask
+				}
 				i += 2
 			} else {
 				filemask += "[^/]*"

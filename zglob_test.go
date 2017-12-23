@@ -37,6 +37,7 @@ var testGlobs = []testZGlob{
 	{`*oo/**/*.txt`, []string{`foo/bar/baz.txt`, `foo/bar/baz/noo.txt`}, nil},
 	{`doo`, nil, os.ErrNotExist},
 	{`./f*`, []string{`foo`}, nil},
+	{`**/bar/**/*.txt`, []string{`foo/bar/baz.txt`, `foo/bar/baz/noo.txt`}, nil},
 }
 
 func setup(t *testing.T) string {
