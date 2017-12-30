@@ -155,6 +155,12 @@ func glob(pattern string, followSymlinks bool) ([]string, error) {
 			if path == "." || len(path) <= len(zenv.root) {
 				return nil
 			}
+			if zenv.fre.MatchString(path) {
+				mu.Lock()
+				matches = append(matches, path)
+				mu.Unlock()
+				return nil
+			}
 			if !zenv.dre.MatchString(path + "/") {
 				return filepath.SkipDir
 			}
