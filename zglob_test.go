@@ -29,6 +29,7 @@ var testGlobs = []testZGlob{
 	{`f*o/**`, []string{`foo/bar`, `foo/baz`}, nil},
 	{`*oo/**`, []string{`foo/bar`, `foo/baz`, `hoo/bar`}, nil},
 	{`*oo/b*`, []string{`foo/bar`, `foo/baz`, `hoo/bar`}, nil},
+	{`*oo/bar`, []string{`foo/bar`, `hoo/bar`}, nil},
 	{`*oo/*z`, []string{`foo/baz`}, nil},
 	{`foo/**/*`, []string{`foo/bar`, `foo/bar/baz`, `foo/bar/baz.txt`, `foo/bar/baz/noo.txt`, `foo/baz`}, nil},
 	{`*oo/**/*`, []string{`foo/bar`, `foo/bar/baz`, `foo/bar/baz.txt`, `foo/bar/baz/noo.txt`, `foo/baz`, `hoo/bar`}, nil},
