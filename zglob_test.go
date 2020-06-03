@@ -39,6 +39,7 @@ var testGlobs = []testZGlob{
 	{`doo`, nil, os.ErrNotExist},
 	{`./f*`, []string{`foo`}, nil},
 	{`**/bar/**/*.txt`, []string{`foo/bar/baz.txt`, `foo/bar/baz/noo.txt`}, nil},
+	{`**/bar/**/*.{jpg,png}`, []string{`zzz/bar/baz/joo.png`, `zzz/bar/baz/zoo.jpg`}, nil},
 }
 
 func setup(t *testing.T) string {
@@ -54,6 +55,9 @@ func setup(t *testing.T) string {
 	ioutil.WriteFile(filepath.Join(tmpdir, "foo/bar/baz/noo.txt"), []byte{}, 0644)
 	os.MkdirAll(filepath.Join(tmpdir, "hoo/bar"), 0755)
 	ioutil.WriteFile(filepath.Join(tmpdir, "foo/bar/baz.txt"), []byte{}, 0644)
+	os.MkdirAll(filepath.Join(tmpdir, "zzz/bar/baz"), 0755)
+	ioutil.WriteFile(filepath.Join(tmpdir, "zzz/bar/baz/zoo.jpg"), []byte{}, 0644)
+	ioutil.WriteFile(filepath.Join(tmpdir, "zzz/bar/baz/joo.png"), []byte{}, 0644)
 
 	return tmpdir
 }
