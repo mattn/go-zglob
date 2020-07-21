@@ -28,7 +28,7 @@ func New(pattern string) (*zenv, error) {
 	globmask := ""
 	root := ""
 	for n, i := range strings.Split(filepath.ToSlash(pattern), "/") {
-		if root == "" && strings.Index(i, "*") != -1 {
+		if root == "" && (strings.Index(i, "*") != -1 || strings.Index(i, "{") != -1) {
 			if globmask == "" {
 				root = "."
 			} else {
