@@ -3,6 +3,7 @@ package zglob
 import (
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -42,6 +43,13 @@ var testGlobs = []testZGlob{
 	{`**/bar/**/*.{jpg,png}`, []string{`zzz/bar/baz/joo.png`, `zzz/bar/baz/zoo.jpg`}, nil},
 	{`zzz/bar/baz/zoo.{jpg,png}`, []string{`zzz/bar/baz/zoo.jpg`}, nil},
 	{`zzz/bar/{baz,z}/zoo.jpg`, []string{`zzz/bar/baz/zoo.jpg`}, nil},
+	{`zzz/nar/\{noo,x\}/joo.png`, []string{`zzz/nar/{noo,x}/joo.png`}, nil},
+}
+
+func fatalIf(err error) {
+	if err != nil {
+		panic(err.Error())
+	}
 }
 
 func setup(t *testing.T) string {
@@ -50,16 +58,18 @@ func setup(t *testing.T) string {
 		t.Fatal(err)
 	}
 
-	os.MkdirAll(filepath.Join(tmpdir, "foo/baz"), 0755)
-	os.MkdirAll(filepath.Join(tmpdir, "foo/bar"), 0755)
-	ioutil.WriteFile(filepath.Join(tmpdir, "foo/bar/baz.txt"), []byte{}, 0644)
-	os.MkdirAll(filepath.Join(tmpdir, "foo/bar/baz"), 0755)
-	ioutil.WriteFile(filepath.Join(tmpdir, "foo/bar/baz/noo.txt"), []byte{}, 0644)
-	os.MkdirAll(filepath.Join(tmpdir, "hoo/bar"), 0755)
-	ioutil.WriteFile(filepath.Join(tmpdir, "foo/bar/baz.txt"), []byte{}, 0644)
-	os.MkdirAll(filepath.Join(tmpdir, "zzz/bar/baz"), 0755)
-	ioutil.WriteFile(filepath.Join(tmpdir, "zzz/bar/baz/zoo.jpg"), []byte{}, 0644)
-	ioutil.WriteFile(filepath.Join(tmpdir, "zzz/bar/baz/joo.png"), []byte{}, 0644)
+	fatalIf(os.MkdirAll(filepath.Join(tmpdir, "foo/baz"), 0755))
+	fatalIf(os.MkdirAll(filepath.Join(tmpdir, "foo/bar"), 0755))
+	fatalIf(ioutil.WriteFile(filepath.Join(tmpdir, "foo/bar/baz.txt"), []byte{}, 0644))
+	fatalIf(os.MkdirAll(filepath.Join(tmpdir, "foo/bar/baz"), 0755))
+	fatalIf(ioutil.WriteFile(filepath.Join(tmpdir, "foo/bar/baz/noo.txt"), []byte{}, 0644))
+	fatalIf(os.MkdirAll(filepath.Join(tmpdir, "hoo/bar"), 0755))
+	fatalIf(ioutil.WriteFile(filepath.Join(tmpdir, "foo/bar/baz.txt"), []byte{}, 0644))
+	fatalIf(os.MkdirAll(filepath.Join(tmpdir, "zzz/bar/baz"), 0755))
+	fatalIf(ioutil.WriteFile(filepath.Join(tmpdir, "zzz/bar/baz/zoo.jpg"), []byte{}, 0644))
+	fatalIf(ioutil.WriteFile(filepath.Join(tmpdir, "zzz/bar/baz/joo.png"), []byte{}, 0644))
+	fatalIf(os.MkdirAll(filepath.Join(tmpdir, "zzz/nar/{noo,x}"), 0755))
+	fatalIf(ioutil.WriteFile(filepath.Join(tmpdir, "zzz/nar/{noo,x}/joo.png"), []byte{}, 0644))
 
 	return tmpdir
 }
@@ -112,7 +122,7 @@ func TestGlobAbs(t *testing.T) {
 	defer os.Chdir(curdir)
 
 	for _, test := range testGlobs {
-		pattern := filepath.ToSlash(filepath.Join(tmpdir, test.pattern))
+		pattern := toSlash(path.Join(tmpdir, test.pattern))
 		expected := make([]string, len(test.expected))
 		for i, e := range test.expected {
 			expected[i] = filepath.ToSlash(filepath.Join(tmpdir, e))

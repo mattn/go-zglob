@@ -1,8 +1,10 @@
 package zglob
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -25,15 +27,35 @@ type zenv struct {
 	root     string
 }
 
+func toSlash(path string) string {
+	if filepath.Separator == '/' {
+		return path
+	}
+	var buf bytes.Buffer
+	cc := []rune(path)
+	for i := 0; i < len(cc); i++ {
+		if i < len(cc)-2 && cc[i] == '\\' && (cc[i+1] == '{' || cc[i+1] == '}') {
+			buf.WriteRune(cc[i])
+			buf.WriteRune(cc[i+1])
+			i++
+		} else if cc[i] == '\\' {
+			buf.WriteRune('/')
+		} else {
+			buf.WriteRune(cc[i])
+		}
+	}
+	return buf.String()
+}
+
 func New(pattern string) (*zenv, error) {
 	globmask := ""
 	root := ""
-	for n, i := range strings.Split(filepath.ToSlash(pattern), "/") {
+	for n, i := range strings.Split(toSlash(pattern), "/") {
 		if root == "" && (strings.Index(i, "*") != -1 || strings.Index(i, "{") != -1) {
 			if globmask == "" {
 				root = "."
 			} else {
-				root = filepath.ToSlash(globmask)
+				root = toSlash(globmask)
 			}
 		}
 		if n == 0 && i == "~" {
@@ -47,7 +69,7 @@ func New(pattern string) (*zenv, error) {
 			i = strings.Trim(strings.Trim(os.Getenv(i[1:]), "()"), `"`)
 		}
 
-		globmask = filepath.Join(globmask, i)
+		globmask = path.Join(globmask, i)
 		if n == 0 {
 			if runtime.GOOS == "windows" && filepath.VolumeName(i) != "" {
 				globmask = i + "/"
@@ -67,14 +89,18 @@ func New(pattern string) (*zenv, error) {
 	if globmask == "" {
 		globmask = "."
 	}
-	globmask = filepath.ToSlash(filepath.Clean(globmask))
+	globmask = toSlash(path.Clean(globmask))
 
 	cc := []rune(globmask)
 	dirmask := ""
 	filemask := ""
 	braceDir := false
+	lastSlash := -1
 	for i := 0; i < len(cc); i++ {
-		if cc[i] == '*' {
+		if i < len(cc)-2 && cc[i] == '\\' {
+			i++
+			filemask += fmt.Sprintf("[\\x%02X]", cc[i])
+		} else if cc[i] == '*' {
 			if i < len(cc)-2 && cc[i+1] == '*' && cc[i+2] == '/' {
 				filemask += "(.*/)?"
 				if dirmask == "" {
@@ -96,7 +122,10 @@ func New(pattern string) (*zenv, error) {
 						break
 					} else {
 						c := cc[j]
-						if c == '/' || ('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || 255 < c {
+						if c == '/' {
+							pattern += string(c)
+							lastSlash = len(filemask)
+						} else if ('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || 255 < c {
 							pattern += string(c)
 						} else {
 							pattern += fmt.Sprintf("[\\x%02X]", c)
@@ -109,7 +138,10 @@ func New(pattern string) (*zenv, error) {
 				}
 			}
 			c := cc[i]
-			if c == '/' || ('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || 255 < c {
+			if c == '/' {
+				filemask += string(c)
+				lastSlash = len(filemask)
+			} else if ('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || 255 < c {
 				filemask += string(c)
 			} else {
 				filemask += fmt.Sprintf("[\\x%02X]", c)
@@ -121,6 +153,9 @@ func New(pattern string) (*zenv, error) {
 	}
 	if dirmask == "" {
 		dirmask = filemask
+		if lastSlash != -1 {
+			dirmask = dirmask[:lastSlash]
+		}
 	}
 	if len(filemask) > 0 && filemask[len(filemask)-1] == '/' {
 		if root == "" {
