@@ -18,10 +18,11 @@ var (
 )
 
 type zenv struct {
-	dre     *regexp.Regexp
-	fre     *regexp.Regexp
-	pattern string
-	root    string
+	dre      *regexp.Regexp
+	fre      *regexp.Regexp
+	braceDir bool
+	pattern  string
+	root     string
 }
 
 func New(pattern string) (*zenv, error) {
@@ -71,6 +72,7 @@ func New(pattern string) (*zenv, error) {
 	cc := []rune(globmask)
 	dirmask := ""
 	filemask := ""
+	braceDir := false
 	for i := 0; i < len(cc); i++ {
 		if cc[i] == '*' {
 			if i < len(cc)-2 && cc[i+1] == '*' && cc[i+2] == '/' {
@@ -89,6 +91,7 @@ func New(pattern string) (*zenv, error) {
 					if cc[j] == ',' {
 						pattern += "|"
 					} else if cc[j] == '}' {
+						braceDir = true
 						i = j
 						break
 					} else {
@@ -130,10 +133,11 @@ func New(pattern string) (*zenv, error) {
 		filemask = "(?i:" + filemask + ")"
 	}
 	return &zenv{
-		dre:     regexp.MustCompile("^" + dirmask),
-		fre:     regexp.MustCompile("^" + filemask + "$"),
-		pattern: pattern,
-		root:    filepath.Clean(root),
+		dre:      regexp.MustCompile("^" + dirmask),
+		fre:      regexp.MustCompile("^" + filemask + "$"),
+		braceDir: braceDir,
+		pattern:  pattern,
+		root:     filepath.Clean(root),
 	}, nil
 }
 
@@ -186,7 +190,8 @@ func glob(pattern string, followSymlinks bool) ([]string, error) {
 				mu.Unlock()
 				return nil
 			}
-			if !zenv.dre.MatchString(path + "/") {
+			// TODO braceDir matches a useless directory.
+			if !zenv.braceDir && !zenv.dre.MatchString(path+"/") {
 				return filepath.SkipDir
 			}
 		}
