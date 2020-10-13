@@ -20,7 +20,7 @@ var (
 )
 
 type zenv struct {
-	dre      *regexp.Regexp
+	dirmask  string
 	fre      *regexp.Regexp
 	braceDir bool
 	pattern  string
@@ -80,7 +80,7 @@ func New(pattern string) (*zenv, error) {
 	}
 	if root == "" {
 		return &zenv{
-			dre:     nil,
+			dirmask: "",
 			fre:     nil,
 			pattern: pattern,
 			root:    "",
@@ -94,37 +94,36 @@ func New(pattern string) (*zenv, error) {
 	cc := []rune(globmask)
 	dirmask := ""
 	filemask := ""
-	braceDir := false
-	lastSlash := -1
+	staticDir := true
 	for i := 0; i < len(cc); i++ {
 		if i < len(cc)-2 && cc[i] == '\\' {
 			i++
 			filemask += fmt.Sprintf("[\\x%02X]", cc[i])
+			if staticDir {
+				dirmask += string(cc[i])
+			}
 		} else if cc[i] == '*' {
+			staticDir = false
 			if i < len(cc)-2 && cc[i+1] == '*' && cc[i+2] == '/' {
 				filemask += "(.*/)?"
-				if dirmask == "" {
-					dirmask = filemask
-				}
 				i += 2
 			} else {
 				filemask += "[^/]*"
 			}
 		} else {
 			if cc[i] == '{' {
+				staticDir = false
 				pattern := ""
 				for j := i + 1; j < len(cc); j++ {
 					if cc[j] == ',' {
 						pattern += "|"
 					} else if cc[j] == '}' {
-						braceDir = true
 						i = j
 						break
 					} else {
 						c := cc[j]
 						if c == '/' {
 							pattern += string(c)
-							lastSlash = len(filemask)
 						} else if ('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || 255 < c {
 							pattern += string(c)
 						} else {
@@ -138,23 +137,14 @@ func New(pattern string) (*zenv, error) {
 				}
 			}
 			c := cc[i]
-			if c == '/' {
-				filemask += string(c)
-				lastSlash = len(filemask)
-			} else if ('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || 255 < c {
+			if c == '/' || ('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || 255 < c {
 				filemask += string(c)
 			} else {
 				filemask += fmt.Sprintf("[\\x%02X]", c)
 			}
-			if c == '/' && dirmask == "" && strings.Index(filemask, "*") != -1 {
-				dirmask = filemask
+			if staticDir {
+				dirmask += string(c)
 			}
-		}
-	}
-	if dirmask == "" {
-		dirmask = filemask
-		if lastSlash != -1 {
-			dirmask = dirmask[:lastSlash]
 		}
 	}
 	if len(filemask) > 0 && filemask[len(filemask)-1] == '/' {
@@ -164,15 +154,13 @@ func New(pattern string) (*zenv, error) {
 		filemask += "[^/]*"
 	}
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-		dirmask = "(?i:" + dirmask + ")"
 		filemask = "(?i:" + filemask + ")"
 	}
 	return &zenv{
-		dre:      regexp.MustCompile("^" + dirmask),
-		fre:      regexp.MustCompile("^" + filemask + "$"),
-		braceDir: braceDir,
-		pattern:  pattern,
-		root:     filepath.Clean(root),
+		dirmask: path.Dir(dirmask) + "/",
+		fre:     regexp.MustCompile("^" + filemask + "$"),
+		pattern: pattern,
+		root:    filepath.Clean(root),
 	}, nil
 }
 
@@ -225,8 +213,7 @@ func glob(pattern string, followSymlinks bool) ([]string, error) {
 				mu.Unlock()
 				return nil
 			}
-			// TODO braceDir matches a useless directory.
-			if !zenv.braceDir && !zenv.dre.MatchString(path+"/") {
+			if len(path) < len(zenv.dirmask) && !strings.HasPrefix(zenv.dirmask, path+"/") {
 				return filepath.SkipDir
 			}
 		}
