@@ -187,7 +187,7 @@ func glob(pattern string, followSymlinks bool) ([]string, error) {
 	relative := !filepath.IsAbs(pattern)
 	matches := []string{}
 
-	fastwalk.FastWalk(zenv.root, func(path string, info os.FileMode) error {
+	err = fastwalk.FastWalk(zenv.root, func(path string, info os.FileMode) error {
 		if zenv.root == "." && len(zenv.root) < len(path) {
 			path = path[len(zenv.root)+1:]
 		}
@@ -228,6 +228,11 @@ func glob(pattern string, followSymlinks bool) ([]string, error) {
 		}
 		return nil
 	})
+
+	if err != nil {
+		return nil, err
+	}
+
 	return matches, nil
 }
 

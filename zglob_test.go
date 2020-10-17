@@ -1,6 +1,7 @@
 package zglob
 
 import (
+	"errors"
 	"io/ioutil"
 	"os"
 	"path"
@@ -188,5 +189,36 @@ func TestFollowSymlinks(t *testing.T) {
 
 	if !check(expected, got) {
 		t.Errorf(`zglob failed: expected %v but got %v`, expected, got)
+	}
+}
+
+func TestGlobError(t *testing.T) {
+	tmpdir, err := ioutil.TempDir("", "zglob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
+
+	err = os.MkdirAll(filepath.Join(tmpdir, "foo"), 0222)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	curdir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.Chdir(tmpdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(curdir)
+
+	got, err := Glob("**/*")
+	if !errors.Is(err, os.ErrPermission) {
+		t.Errorf(`zglob failed: expected %v but got %v`, os.ErrPermission, err)
+	}
+	if !check(nil, got) {
+		t.Errorf(`zglob failed: expected %v but got %v`, nil, got)
 	}
 }
