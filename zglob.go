@@ -135,6 +135,26 @@ func New(pattern string) (*zenv, error) {
 					filemask += "(" + pattern + ")"
 					continue
 				}
+			} else if i < len(cc)-1 && cc[i] == '!' && cc[i+1] == '(' {
+				i++
+				pattern := ""
+				for j := i + 1; j < len(cc); j++ {
+					if cc[j] == ')' {
+						i = j
+						break
+					} else {
+						c := cc[j]
+						pattern += fmt.Sprintf("[^\\x%02X/]*", c)
+					}
+				}
+				if pattern != "" {
+					if dirmask == "" {
+						dirmask = filemask
+						root = filemask
+					}
+					filemask += pattern
+					continue
+				}
 			}
 			c := cc[i]
 			if c == '/' || ('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || 255 < c {
