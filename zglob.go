@@ -233,7 +233,7 @@ func glob(pattern string, followSymlinks bool) ([]string, error) {
 				mu.Unlock()
 				return nil
 			}
-			if len(path) < len(zenv.dirmask) && !strings.HasPrefix(zenv.dirmask, path+"/") {
+			if !strings.HasPrefix(zenv.dirmask, path+"/") {
 				return filepath.SkipDir
 			}
 		}
