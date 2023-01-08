@@ -12,8 +12,16 @@ matches, err := zglob.Glob(`./foo/b*/**/z*.txt`)
 
 ## Installation
 
-```
+For using library:
+
+```console
 $ go get github.com/mattn/go-zglob
+```
+
+For using command:
+
+```console
+$ go install github.com/mattn/go-zglob/cmd/zglob@latest
 ```
 
 ## License
