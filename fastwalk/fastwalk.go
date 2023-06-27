@@ -31,12 +31,12 @@ var TraverseLink = errors.New("traverse symlink, assuming target is a directory"
 // If fastWalk returns filepath.SkipDir, the directory is skipped.
 //
 // Unlike filepath.Walk:
-//   * file stat calls must be done by the user.
+//   - file stat calls must be done by the user.
 //     The only provided metadata is the file type, which does not include
 //     any permission bits.
-//   * multiple goroutines stat the filesystem concurrently. The provided
+//   - multiple goroutines stat the filesystem concurrently. The provided
 //     walkFn must be safe for concurrent use.
-//   * fastWalk can follow symlinks if walkFn returns the TraverseLink
+//   - fastWalk can follow symlinks if walkFn returns the TraverseLink
 //     sentinel error. It is the walkFn's responsibility to prevent
 //     fastWalk from going into symlink cycles.
 func FastWalk(root string, walkFn func(path string, typ os.FileMode) error) error {
