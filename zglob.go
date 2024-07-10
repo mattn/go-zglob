@@ -110,6 +110,21 @@ func New(pattern string) (*zenv, error) {
 			} else {
 				filemask += "[^/]*"
 			}
+		} else if cc[i] == '[' { // range
+			staticDir = false
+			pattern := ""
+			for j := i + 1; j < len(cc); j++ {
+				if cc[j] == ']' {
+					i = j
+					break
+				} else {
+					pattern += string(cc[j])
+				}
+			}
+			if pattern != "" {
+				filemask += "[" + pattern + "]"
+				continue
+			}
 		} else {
 			if cc[i] == '{' {
 				staticDir = false
