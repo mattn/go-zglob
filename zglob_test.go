@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -20,35 +21,36 @@ func check(got []string, expected []string) bool {
 type testZGlob struct {
 	pattern  string
 	expected []string
-	err      error
+	err      string
 }
 
 var testGlobs = []testZGlob{
-	{`fo*`, []string{`foo`}, nil},
-	{`foo`, []string{`foo`}, nil},
-	{`foo/*`, []string{`foo/bar`, `foo/baz`}, nil},
-	{`foo/b[a]*`, []string{`foo/bar`, `foo/baz`}, nil},
-	{`foo/b[a][r]*`, []string{`foo/bar`}, nil},
-	{`foo/b[a-z]*`, []string{`foo/bar`, `foo/baz`}, nil},
-	{`foo/b[c-z]*`, []string{}, nil},
-	{`foo/**`, []string{`foo/bar`, `foo/baz`}, nil},
-	{`f*o/**`, []string{`foo/bar`, `foo/baz`}, nil},
-	{`*oo/**`, []string{`foo/bar`, `foo/baz`, `hoo/bar`}, nil},
-	{`*oo/b*`, []string{`foo/bar`, `foo/baz`, `hoo/bar`}, nil},
-	{`*oo/bar`, []string{`foo/bar`, `hoo/bar`}, nil},
-	{`*oo/*z`, []string{`foo/baz`}, nil},
-	{`foo/**/*`, []string{`foo/bar`, `foo/bar/baz`, `foo/bar/baz.txt`, `foo/bar/baz/noo.txt`, `foo/baz`}, nil},
-	{`*oo/**/*`, []string{`foo/bar`, `foo/bar/baz`, `foo/bar/baz.txt`, `foo/bar/baz/noo.txt`, `foo/baz`, `hoo/bar`}, nil},
-	{`*oo/*.txt`, []string{}, nil},
-	{`*oo/*/*.txt`, []string{`foo/bar/baz.txt`}, nil},
-	{`*oo/**/*.txt`, []string{`foo/bar/baz.txt`, `foo/bar/baz/noo.txt`}, nil},
-	{`doo`, nil, os.ErrNotExist},
-	{`./f*`, []string{`foo`}, nil},
-	{`**/bar/**/*.txt`, []string{`foo/bar/baz.txt`, `foo/bar/baz/noo.txt`}, nil},
-	{`**/bar/**/*.{jpg,png}`, []string{`zzz/bar/baz/joo.png`, `zzz/bar/baz/zoo.jpg`}, nil},
-	{`zzz/bar/baz/zoo.{jpg,png}`, []string{`zzz/bar/baz/zoo.jpg`}, nil},
-	{`zzz/bar/{baz,z}/zoo.jpg`, []string{`zzz/bar/baz/zoo.jpg`}, nil},
-	{`zzz/nar/\{noo,x\}/joo.png`, []string{`zzz/nar/{noo,x}/joo.png`}, nil},
+	{`fo*`, []string{`foo`}, ""},
+	{`foo`, []string{`foo`}, ""},
+	{`foo/*`, []string{`foo/bar`, `foo/baz`}, ""},
+	{`foo/b[a]*`, []string{`foo/bar`, `foo/baz`}, ""},
+	{`foo/b[a][r]*`, []string{`foo/bar`}, ""},
+	{`foo/b[a-z]*`, []string{`foo/bar`, `foo/baz`}, ""},
+	{`foo/b[c-z]*`, []string{}, ""},
+	{`foo/b[z-c]*`, []string{}, "error parsing regexp"},
+	{`foo/**`, []string{`foo/bar`, `foo/baz`}, ""},
+	{`f*o/**`, []string{`foo/bar`, `foo/baz`}, ""},
+	{`*oo/**`, []string{`foo/bar`, `foo/baz`, `hoo/bar`}, ""},
+	{`*oo/b*`, []string{`foo/bar`, `foo/baz`, `hoo/bar`}, ""},
+	{`*oo/bar`, []string{`foo/bar`, `hoo/bar`}, ""},
+	{`*oo/*z`, []string{`foo/baz`}, ""},
+	{`foo/**/*`, []string{`foo/bar`, `foo/bar/baz`, `foo/bar/baz.txt`, `foo/bar/baz/noo.txt`, `foo/baz`}, ""},
+	{`*oo/**/*`, []string{`foo/bar`, `foo/bar/baz`, `foo/bar/baz.txt`, `foo/bar/baz/noo.txt`, `foo/baz`, `hoo/bar`}, ""},
+	{`*oo/*.txt`, []string{}, ""},
+	{`*oo/*/*.txt`, []string{`foo/bar/baz.txt`}, ""},
+	{`*oo/**/*.txt`, []string{`foo/bar/baz.txt`, `foo/bar/baz/noo.txt`}, ""},
+	{`doo`, nil, "file does not exist"},
+	{`./f*`, []string{`foo`}, ""},
+	{`**/bar/**/*.txt`, []string{`foo/bar/baz.txt`, `foo/bar/baz/noo.txt`}, ""},
+	{`**/bar/**/*.{jpg,png}`, []string{`zzz/bar/baz/joo.png`, `zzz/bar/baz/zoo.jpg`}, ""},
+	{`zzz/bar/baz/zoo.{jpg,png}`, []string{`zzz/bar/baz/zoo.jpg`}, ""},
+	{`zzz/bar/{baz,z}/zoo.jpg`, []string{`zzz/bar/baz/zoo.jpg`}, ""},
+	{`zzz/nar/\{noo,x\}/joo.png`, []string{`zzz/nar/{noo,x}/joo.png`}, ""},
 }
 
 func fatalIf(err error) {
@@ -101,7 +103,7 @@ func TestGlob(t *testing.T) {
 		}
 		got, err := Glob(test.pattern)
 		if err != nil {
-			if test.err != err {
+			if !strings.Contains(err.Error(), test.err) {
 				t.Error(err)
 			}
 			continue
@@ -134,7 +136,7 @@ func TestGlobAbs(t *testing.T) {
 		}
 		got, err := Glob(pattern)
 		if err != nil {
-			if test.err != err {
+			if !strings.Contains(err.Error(), test.err) {
 				t.Error(err)
 			}
 			continue

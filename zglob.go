@@ -191,9 +191,13 @@ func New(pattern string) (*zenv, error) {
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
 		filemask = "(?i:" + filemask + ")"
 	}
+	fre, err := regexp.Compile("^" + filemask + "$")
+	if err != nil {
+		return nil, err
+	}
 	return &zenv{
 		dirmask: path.Dir(dirmask) + "/",
-		fre:     regexp.MustCompile("^" + filemask + "$"),
+		fre:     fre,
 		pattern: pattern,
 		root:    filepath.Clean(root),
 	}, nil
