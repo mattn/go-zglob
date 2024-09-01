@@ -1,6 +1,6 @@
 # go-zglob
 
-[![Build Status](https://travis-ci.org/mattn/go-zglob.svg)](https://travis-ci.org/mattn/go-zglob)
+[![Build Status](https://github.com/mattn/go-zglob/actions/workflows/go.yml/badge.svg)](https://github.com/mattn/go-zglob/actions/workflows/go.yml)
 
 zglob
 
