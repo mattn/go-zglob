@@ -20,11 +20,10 @@ var (
 )
 
 type zenv struct {
-	dirmask  string
-	fre      *regexp.Regexp
-	braceDir bool
-	pattern  string
-	root     string
+	dirmask string
+	fre     *regexp.Regexp
+	pattern string
+	root    string
 }
 
 func toSlash(path string) string {
@@ -51,7 +50,7 @@ func New(pattern string) (*zenv, error) {
 	globmask := ""
 	root := ""
 	for n, i := range strings.Split(toSlash(pattern), "/") {
-		if root == "" && (strings.Index(i, "*") != -1 || strings.Index(i, "{") != -1) {
+		if root == "" && strings.ContainsAny(i, "*{") {
 			if globmask == "" {
 				root = "."
 			} else {
@@ -92,111 +91,119 @@ func New(pattern string) (*zenv, error) {
 	globmask = toSlash(path.Clean(globmask))
 
 	cc := []rune(globmask)
-	dirmask := ""
-	filemask := ""
+	var dirmask strings.Builder
+	var filemask strings.Builder
 	staticDir := true
 	for i := 0; i < len(cc); i++ {
 		if i < len(cc)-2 && cc[i] == '\\' {
 			i++
-			filemask += fmt.Sprintf("[\\x%02X]", cc[i])
+			fmt.Fprintf(&filemask, "[\\x%02X]", cc[i])
 			if staticDir {
-				dirmask += string(cc[i])
+				dirmask.WriteRune(cc[i])
 			}
 		} else if cc[i] == '*' {
 			staticDir = false
 			if i < len(cc)-2 && cc[i+1] == '*' && cc[i+2] == '/' {
-				filemask += "(.*/)?"
+				filemask.WriteString("(.*/)?")
 				i += 2
 			} else {
-				filemask += "[^/]*"
+				filemask.WriteString("[^/]*")
 			}
 		} else if cc[i] == '[' { // range
 			staticDir = false
-			pattern := ""
+			var b strings.Builder
 			for j := i + 1; j < len(cc); j++ {
 				if cc[j] == ']' {
 					i = j
 					break
 				} else {
-					pattern += string(cc[j])
+					b.WriteRune(cc[j])
 				}
 			}
-			if pattern != "" {
-				filemask += "[" + pattern + "]"
+			if pattern := b.String(); pattern != "" {
+				filemask.WriteByte('[')
+				filemask.WriteString(pattern)
+				filemask.WriteByte(']')
 				continue
 			}
 		} else {
 			if cc[i] == '{' {
 				staticDir = false
-				pattern := ""
+				var b strings.Builder
 				for j := i + 1; j < len(cc); j++ {
 					if cc[j] == ',' {
-						pattern += "|"
+						b.WriteByte('|')
 					} else if cc[j] == '}' {
 						i = j
 						break
 					} else {
 						c := cc[j]
 						if c == '/' {
-							pattern += string(c)
+							b.WriteRune(c)
 						} else if ('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || 255 < c {
-							pattern += string(c)
+							b.WriteRune(c)
 						} else {
-							pattern += fmt.Sprintf("[\\x%02X]", c)
+							fmt.Fprintf(&b, "[\\x%02X]", c)
 						}
 					}
 				}
-				if pattern != "" {
-					filemask += "(" + pattern + ")"
+				if pattern := b.String(); pattern != "" {
+					filemask.WriteByte('(')
+					filemask.WriteString(pattern)
+					filemask.WriteByte(')')
 					continue
 				}
 			} else if i < len(cc)-1 && cc[i] == '!' && cc[i+1] == '(' {
 				i++
-				pattern := ""
+				var b strings.Builder
 				for j := i + 1; j < len(cc); j++ {
 					if cc[j] == ')' {
 						i = j
 						break
 					} else {
 						c := cc[j]
-						pattern += fmt.Sprintf("[^\\x%02X/]*", c)
+						fmt.Fprintf(&b, "[^\\x%02X/]*", c)
 					}
 				}
-				if pattern != "" {
-					if dirmask == "" {
-						dirmask = filemask
-						root = filemask
+				if pattern := b.String(); pattern != "" {
+					if dirmask.Len() == 0 {
+						m := filemask.String()
+						dirmask.WriteString(m)
+						root = m
 					}
-					filemask += pattern
+					filemask.WriteString(pattern)
 					continue
 				}
 			}
 			c := cc[i]
 			if c == '/' || ('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || 255 < c {
-				filemask += string(c)
+				filemask.WriteRune(c)
 			} else {
-				filemask += fmt.Sprintf("[\\x%02X]", c)
+				fmt.Fprintf(&filemask, "[\\x%02X]", c)
 			}
 			if staticDir {
-				dirmask += string(c)
+				dirmask.WriteRune(c)
 			}
 		}
 	}
-	if len(filemask) > 0 && filemask[len(filemask)-1] == '/' {
+	if m := filemask.String(); len(m) > 0 && m[len(m)-1] == '/' {
 		if root == "" {
-			root = filemask
+			root = m
 		}
-		filemask += "[^/]*"
+		filemask.WriteString("[^/]*")
 	}
+	var pat string
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-		filemask = "(?i:" + filemask + ")"
+		pat = "^(?i:" + filemask.String() + ")$"
+	} else {
+		pat = "^" + filemask.String() + "$"
 	}
-	fre, err := regexp.Compile("^" + filemask + "$")
+	fre, err := regexp.Compile(pat)
 	if err != nil {
 		return nil, err
 	}
 	return &zenv{
-		dirmask: path.Dir(dirmask) + "/",
+		dirmask: path.Dir(dirmask.String()) + "/",
 		fre:     fre,
 		pattern: pattern,
 		root:    filepath.Clean(root),

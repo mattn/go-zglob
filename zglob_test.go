@@ -59,11 +59,9 @@ func fatalIf(err error) {
 	}
 }
 
-func setup(t *testing.T) string {
+func setup() (string, string) {
 	tmpdir, err := ioutil.TempDir("", "zglob")
-	if err != nil {
-		t.Fatal(err)
-	}
+	fatalIf(err)
 
 	fatalIf(os.MkdirAll(filepath.Join(tmpdir, "foo/baz"), 0755))
 	fatalIf(os.MkdirAll(filepath.Join(tmpdir, "foo/bar"), 0755))
@@ -78,22 +76,17 @@ func setup(t *testing.T) string {
 	fatalIf(os.MkdirAll(filepath.Join(tmpdir, "zzz/nar/{noo,x}"), 0755))
 	fatalIf(ioutil.WriteFile(filepath.Join(tmpdir, "zzz/nar/{noo,x}/joo.png"), []byte{}, 0644))
 
-	return tmpdir
+	curdir, err := os.Getwd()
+	fatalIf(err)
+	fatalIf(os.Chdir(tmpdir))
+
+	return tmpdir, curdir
 }
 
 func TestGlob(t *testing.T) {
-	tmpdir := setup(t)
+	tmpdir, savedCwd := setup()
 	defer os.RemoveAll(tmpdir)
-
-	curdir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = os.Chdir(tmpdir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chdir(curdir)
+	defer os.Chdir(savedCwd)
 
 	tmpdir = "."
 	for _, test := range testGlobs {
@@ -115,18 +108,9 @@ func TestGlob(t *testing.T) {
 }
 
 func TestGlobAbs(t *testing.T) {
-	tmpdir := setup(t)
+	tmpdir, savedCwd := setup()
 	defer os.RemoveAll(tmpdir)
-
-	curdir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = os.Chdir(tmpdir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chdir(curdir)
+	defer os.Chdir(savedCwd)
 
 	for _, test := range testGlobs {
 		pattern := toSlash(path.Join(tmpdir, test.pattern))
@@ -226,5 +210,26 @@ func TestGlobError(t *testing.T) {
 	}
 	if !check(nil, got) {
 		t.Errorf(`zglob failed: expected %v but got %v`, nil, got)
+	}
+}
+
+func BenchmarkGlob(b *testing.B) {
+	tmpdir, savedCwd := setup()
+	defer os.RemoveAll(tmpdir)
+	defer os.Chdir(savedCwd)
+
+	for i := 0; i < b.N; i++ {
+		for _, test := range testGlobs {
+			if test.err != "" {
+				continue
+			}
+			got, err := Glob(test.pattern)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if len(got) != len(test.expected) {
+				b.Fatalf(`zglob failed: pattern %q: expected %v but got %v`, test.pattern, test.expected, got)
+			}
+		}
 	}
 }
