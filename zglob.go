@@ -20,11 +20,10 @@ var (
 )
 
 type zenv struct {
-	dirmask  string
-	fre      *regexp.Regexp
-	braceDir bool
-	pattern  string
-	root     string
+	dirmask string
+	fre     *regexp.Regexp
+	pattern string
+	root    string
 }
 
 func toSlash(path string) string {
@@ -51,7 +50,7 @@ func New(pattern string) (*zenv, error) {
 	globmask := ""
 	root := ""
 	for n, i := range strings.Split(toSlash(pattern), "/") {
-		if root == "" && (strings.Index(i, "*") != -1 || strings.Index(i, "{") != -1) {
+		if root == "" && strings.ContainsAny(i, "*{") {
 			if globmask == "" {
 				root = "."
 			} else {
