@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/mattn/go-zglob/fastwalk"
 )
@@ -21,9 +22,43 @@ var (
 
 type zenv struct {
 	dirmask string
-	fre     *regexp.Regexp
+	matcher *globMatcher
 	pattern string
 	root    string
+}
+
+type globOpKind uint8
+
+const (
+	opLiteral globOpKind = iota
+	opStar
+	opDoubleStarSlash
+	opCharClass
+	opAlternatives
+	opNotCharStar
+)
+
+type globOp struct {
+	kind         globOpKind
+	text         []rune
+	alternatives [][]rune
+	charClass    *charClass
+	ch           rune
+}
+
+type globMatcher struct {
+	ops             []globOp
+	caseInsensitive bool
+}
+
+type charClass struct {
+	negated bool
+	items   []charClassItem
+}
+
+type charClassItem struct {
+	lo rune
+	hi rune
 }
 
 func toSlash(path string) string {
@@ -94,7 +129,7 @@ func newEnv(pattern string) (*zenv, error) {
 	if root == "" {
 		return &zenv{
 			dirmask: "",
-			fre:     nil,
+			matcher: nil,
 			pattern: pattern,
 			root:    "",
 		}, nil
@@ -103,122 +138,13 @@ func newEnv(pattern string) (*zenv, error) {
 		globmask = "."
 	}
 	globmask = toSlash(path.Clean(globmask))
-
-	cc := []rune(globmask)
-	var dirmask strings.Builder
-	var filemask strings.Builder
-	staticDir := true
-	for i := 0; i < len(cc); i++ {
-		if i < len(cc)-2 && cc[i] == '\\' {
-			i++
-			fmt.Fprintf(&filemask, "[\\x%02X]", cc[i])
-			if staticDir {
-				dirmask.WriteRune(cc[i])
-			}
-		} else if cc[i] == '*' {
-			staticDir = false
-			if i < len(cc)-2 && cc[i+1] == '*' && cc[i+2] == '/' {
-				filemask.WriteString("(.*/)?")
-				i += 2
-			} else {
-				filemask.WriteString("[^/]*")
-			}
-		} else if cc[i] == '[' { // range
-			staticDir = false
-			var b strings.Builder
-			for j := i + 1; j < len(cc); j++ {
-				if cc[j] == ']' {
-					i = j
-					break
-				} else {
-					b.WriteRune(cc[j])
-				}
-			}
-			if pattern := b.String(); pattern != "" {
-				filemask.WriteByte('[')
-				filemask.WriteString(pattern)
-				filemask.WriteByte(']')
-				continue
-			}
-		} else {
-			if cc[i] == '{' {
-				staticDir = false
-				var b strings.Builder
-				for j := i + 1; j < len(cc); j++ {
-					if cc[j] == ',' {
-						b.WriteByte('|')
-					} else if cc[j] == '}' {
-						i = j
-						break
-					} else {
-						c := cc[j]
-						if c == '/' {
-							b.WriteRune(c)
-						} else if ('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || 255 < c {
-							b.WriteRune(c)
-						} else {
-							fmt.Fprintf(&b, "[\\x%02X]", c)
-						}
-					}
-				}
-				if pattern := b.String(); pattern != "" {
-					filemask.WriteByte('(')
-					filemask.WriteString(pattern)
-					filemask.WriteByte(')')
-					continue
-				}
-			} else if i < len(cc)-1 && cc[i] == '!' && cc[i+1] == '(' {
-				i++
-				var b strings.Builder
-				for j := i + 1; j < len(cc); j++ {
-					if cc[j] == ')' {
-						i = j
-						break
-					} else {
-						c := cc[j]
-						fmt.Fprintf(&b, "[^\\x%02X/]*", c)
-					}
-				}
-				if pattern := b.String(); pattern != "" {
-					if dirmask.Len() == 0 {
-						m := filemask.String()
-						dirmask.WriteString(m)
-						root = m
-					}
-					filemask.WriteString(pattern)
-					continue
-				}
-			}
-			c := cc[i]
-			if c == '/' || ('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || 255 < c {
-				filemask.WriteRune(c)
-			} else {
-				fmt.Fprintf(&filemask, "[\\x%02X]", c)
-			}
-			if staticDir {
-				dirmask.WriteRune(c)
-			}
-		}
-	}
-	if m := filemask.String(); len(m) > 0 && m[len(m)-1] == '/' {
-		if root == "" {
-			root = m
-		}
-		filemask.WriteString("[^/]*")
-	}
-	var pat string
-	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-		pat = "^(?i:" + filemask.String() + ")$"
-	} else {
-		pat = "^" + filemask.String() + "$"
-	}
-	fre, err := regexp.Compile(pat)
+	matcher, dirmask, err := compileGlob(globmask)
 	if err != nil {
 		return nil, err
 	}
 	return &zenv{
-		dirmask: path.Dir(dirmask.String()) + "/",
-		fre:     fre,
+		dirmask: path.Dir(dirmask) + "/",
+		matcher: matcher,
 		pattern: pattern,
 		root:    filepath.Clean(root),
 	}, nil
@@ -268,7 +194,7 @@ func glob(pattern string, followSymlinks bool) ([]string, error) {
 			if path == "." || len(path) <= len(zenv.root) {
 				return nil
 			}
-			if zenv.fre.MatchString(path) {
+			if zenv.matcher.Match(path) {
 				mu.Lock()
 				matches = append(matches, path)
 				mu.Unlock()
@@ -279,7 +205,7 @@ func glob(pattern string, followSymlinks bool) ([]string, error) {
 			}
 		}
 
-		if zenv.fre.MatchString(path) {
+		if zenv.matcher.Match(path) {
 			if relative && zenv.root != "." && filepath.IsAbs(path) {
 				path = path[len(zenv.root)+1:]
 			}
@@ -316,10 +242,7 @@ func (z *zenv) Match(name string) bool {
 		return false
 	}
 
-	if z.fre.MatchString(name) {
-		return true
-	}
-	return false
+	return z.matcher.Match(name)
 }
 
 func walkPathToSlash(path string) string {
@@ -327,4 +250,282 @@ func walkPathToSlash(path string) string {
 		return path
 	}
 	return filepath.ToSlash(path)
+}
+
+func compileGlob(pattern string) (*globMatcher, string, error) {
+	cc := []rune(pattern)
+	var (
+		ops       []globOp
+		literal   []rune
+		dirmask   strings.Builder
+		staticDir = true
+	)
+	flushLiteral := func() {
+		if len(literal) == 0 {
+			return
+		}
+		text := append([]rune(nil), literal...)
+		ops = append(ops, globOp{kind: opLiteral, text: text})
+		literal = literal[:0]
+	}
+
+	for i := 0; i < len(cc); i++ {
+		switch {
+		case i < len(cc)-1 && cc[i] == '\\':
+			i++
+			literal = append(literal, cc[i])
+			if staticDir {
+				dirmask.WriteRune(cc[i])
+			}
+		case i < len(cc)-2 && cc[i] == '*' && cc[i+1] == '*' && cc[i+2] == '/':
+			flushLiteral()
+			ops = append(ops, globOp{kind: opDoubleStarSlash})
+			staticDir = false
+			i += 2
+		case cc[i] == '*':
+			flushLiteral()
+			ops = append(ops, globOp{kind: opStar})
+			staticDir = false
+		case cc[i] == '[':
+			cls, next, ok, err := parseCharClass(cc, i)
+			if err != nil {
+				return nil, "", err
+			}
+			if !ok {
+				literal = append(literal, cc[i])
+				if staticDir {
+					dirmask.WriteRune(cc[i])
+				}
+				continue
+			}
+			flushLiteral()
+			ops = append(ops, globOp{kind: opCharClass, charClass: cls})
+			staticDir = false
+			i = next
+		case cc[i] == '{':
+			alts, next, ok := parseAlternatives(cc, i)
+			if !ok {
+				literal = append(literal, cc[i])
+				if staticDir {
+					dirmask.WriteRune(cc[i])
+				}
+				continue
+			}
+			flushLiteral()
+			ops = append(ops, globOp{kind: opAlternatives, alternatives: alts})
+			staticDir = false
+			i = next
+		case i < len(cc)-1 && cc[i] == '!' && cc[i+1] == '(':
+			chars, next, ok := parseNotChars(cc, i)
+			if !ok {
+				literal = append(literal, cc[i])
+				if staticDir {
+					dirmask.WriteRune(cc[i])
+				}
+				continue
+			}
+			flushLiteral()
+			for _, ch := range chars {
+				ops = append(ops, globOp{kind: opNotCharStar, ch: ch})
+			}
+			staticDir = false
+			i = next
+		default:
+			literal = append(literal, cc[i])
+			if staticDir {
+				dirmask.WriteRune(cc[i])
+			}
+		}
+	}
+
+	flushLiteral()
+	if len(cc) > 0 && cc[len(cc)-1] == '/' {
+		ops = append(ops, globOp{kind: opStar})
+	}
+	return &globMatcher{
+		ops:             ops,
+		caseInsensitive: runtime.GOOS == "windows" || runtime.GOOS == "darwin",
+	}, dirmask.String(), nil
+}
+
+func parseCharClass(cc []rune, start int) (*charClass, int, bool, error) {
+	end := start + 1
+	for end < len(cc) && cc[end] != ']' {
+		end++
+	}
+	if end >= len(cc) {
+		return nil, 0, false, nil
+	}
+	content := cc[start+1 : end]
+	if len(content) == 0 {
+		return nil, 0, false, nil
+	}
+
+	cls := &charClass{}
+	if content[0] == '^' {
+		cls.negated = true
+		content = content[1:]
+	}
+	for i := 0; i < len(content); i++ {
+		current := content[i]
+		if current == '\\' && i+1 < len(content) {
+			i++
+			current = content[i]
+		}
+		if i+2 < len(content) && content[i+1] == '-' {
+			hi := content[i+2]
+			if hi == '\\' && i+3 < len(content) {
+				i += 2
+				hi = content[i+1]
+			}
+			if current > hi {
+				return nil, 0, false, fmt.Errorf("error parsing regexp: invalid character class range: %c-%c", current, hi)
+			}
+			cls.items = append(cls.items, charClassItem{lo: current, hi: hi})
+			i += 2
+			continue
+		}
+		cls.items = append(cls.items, charClassItem{lo: current, hi: current})
+	}
+	return cls, end, true, nil
+}
+
+func parseAlternatives(cc []rune, start int) ([][]rune, int, bool) {
+	var (
+		alternatives [][]rune
+		current      []rune
+	)
+	for i := start + 1; i < len(cc); i++ {
+		switch cc[i] {
+		case ',':
+			alternatives = append(alternatives, append([]rune(nil), current...))
+			current = current[:0]
+		case '}':
+			alternatives = append(alternatives, append([]rune(nil), current...))
+			if len(alternatives) == 0 {
+				return nil, 0, false
+			}
+			return alternatives, i, true
+		default:
+			current = append(current, cc[i])
+		}
+	}
+	return nil, 0, false
+}
+
+func parseNotChars(cc []rune, start int) ([]rune, int, bool) {
+	var chars []rune
+	for i := start + 2; i < len(cc); i++ {
+		if cc[i] == ')' {
+			return chars, i, true
+		}
+		chars = append(chars, cc[i])
+	}
+	return nil, 0, false
+}
+
+func (m *globMatcher) Match(name string) bool {
+	if m == nil {
+		return false
+	}
+	return m.match([]rune(name), 0, 0)
+}
+
+func (m *globMatcher) match(name []rune, opIndex, nameIndex int) bool {
+	if opIndex == len(m.ops) {
+		return nameIndex == len(name)
+	}
+	op := m.ops[opIndex]
+	switch op.kind {
+	case opLiteral:
+		if m.hasPrefix(name[nameIndex:], op.text) {
+			return m.match(name, opIndex+1, nameIndex+len(op.text))
+		}
+	case opStar:
+		return m.matchStar(name, opIndex, nameIndex, 0)
+	case opDoubleStarSlash:
+		return m.matchDoubleStarSlash(name, opIndex, nameIndex)
+	case opCharClass:
+		if nameIndex < len(name) && name[nameIndex] != '/' && op.charClass.match(name[nameIndex], m.caseInsensitive) {
+			return m.match(name, opIndex+1, nameIndex+1)
+		}
+	case opAlternatives:
+		for _, alt := range op.alternatives {
+			if m.hasPrefix(name[nameIndex:], alt) && m.match(name, opIndex+1, nameIndex+len(alt)) {
+				return true
+			}
+		}
+	case opNotCharStar:
+		return m.matchStar(name, opIndex, nameIndex, op.ch)
+	}
+	return false
+}
+
+func (m *globMatcher) matchStar(name []rune, opIndex, nameIndex int, stop rune) bool {
+	for i := nameIndex; ; i++ {
+		if m.match(name, opIndex+1, i) {
+			return true
+		}
+		if i >= len(name) || name[i] == '/' {
+			return false
+		}
+		if stop != 0 && sameRune(name[i], stop, m.caseInsensitive) {
+			return false
+		}
+	}
+}
+
+func (m *globMatcher) matchDoubleStarSlash(name []rune, opIndex, nameIndex int) bool {
+	if m.match(name, opIndex+1, nameIndex) {
+		return true
+	}
+	for i := nameIndex; i < len(name); i++ {
+		if name[i] == '/' && m.match(name, opIndex+1, i+1) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *globMatcher) hasPrefix(name, prefix []rune) bool {
+	if len(prefix) > len(name) {
+		return false
+	}
+	for i, r := range prefix {
+		if !sameRune(name[i], r, m.caseInsensitive) {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *charClass) match(r rune, caseInsensitive bool) bool {
+	matched := false
+	for _, item := range c.items {
+		if runeInRange(r, item.lo, item.hi, caseInsensitive) {
+			matched = true
+			break
+		}
+	}
+	if c.negated {
+		return !matched
+	}
+	return matched
+}
+
+func runeInRange(r, lo, hi rune, caseInsensitive bool) bool {
+	if !caseInsensitive {
+		return lo <= r && r <= hi
+	}
+	r = unicode.ToLower(r)
+	lo = unicode.ToLower(lo)
+	hi = unicode.ToLower(hi)
+	return lo <= r && r <= hi
+}
+
+func sameRune(a, b rune, caseInsensitive bool) bool {
+	if !caseInsensitive {
+		return a == b
+	}
+	return unicode.ToLower(a) == unicode.ToLower(b)
 }
