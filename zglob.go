@@ -10,7 +10,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"unicode"
 
 	"github.com/mattn/go-zglob/fastwalk"
 )
@@ -40,10 +39,10 @@ const (
 
 type globOp struct {
 	kind         globOpKind
-	text         []rune
-	alternatives [][]rune
+	text         string
+	alternatives []string
 	charClass    *charClass
-	ch           rune
+	ch           byte
 }
 
 type globMatcher struct {
@@ -57,8 +56,8 @@ type charClass struct {
 }
 
 type charClassItem struct {
-	lo rune
-	hi rune
+	lo byte
+	hi byte
 }
 
 func toSlash(path string) string {
@@ -253,48 +252,46 @@ func walkPathToSlash(path string) string {
 }
 
 func compileGlob(pattern string) (*globMatcher, string, error) {
-	cc := []rune(pattern)
 	var (
 		ops       []globOp
-		literal   []rune
+		literal   strings.Builder
 		dirmask   strings.Builder
 		staticDir = true
 	)
 	flushLiteral := func() {
-		if len(literal) == 0 {
+		if literal.Len() == 0 {
 			return
 		}
-		text := append([]rune(nil), literal...)
-		ops = append(ops, globOp{kind: opLiteral, text: text})
-		literal = literal[:0]
+		ops = append(ops, globOp{kind: opLiteral, text: literal.String()})
+		literal.Reset()
 	}
 
-	for i := 0; i < len(cc); i++ {
+	for i := 0; i < len(pattern); i++ {
 		switch {
-		case i < len(cc)-1 && cc[i] == '\\':
+		case i < len(pattern)-1 && pattern[i] == '\\':
 			i++
-			literal = append(literal, cc[i])
+			literal.WriteByte(pattern[i])
 			if staticDir {
-				dirmask.WriteRune(cc[i])
+				dirmask.WriteByte(pattern[i])
 			}
-		case i < len(cc)-2 && cc[i] == '*' && cc[i+1] == '*' && cc[i+2] == '/':
+		case i < len(pattern)-2 && pattern[i] == '*' && pattern[i+1] == '*' && pattern[i+2] == '/':
 			flushLiteral()
 			ops = append(ops, globOp{kind: opDoubleStarSlash})
 			staticDir = false
 			i += 2
-		case cc[i] == '*':
+		case pattern[i] == '*':
 			flushLiteral()
 			ops = append(ops, globOp{kind: opStar})
 			staticDir = false
-		case cc[i] == '[':
-			cls, next, ok, err := parseCharClass(cc, i)
+		case pattern[i] == '[':
+			cls, next, ok, err := parseCharClass(pattern, i)
 			if err != nil {
 				return nil, "", err
 			}
 			if !ok {
-				literal = append(literal, cc[i])
+				literal.WriteByte(pattern[i])
 				if staticDir {
-					dirmask.WriteRune(cc[i])
+					dirmask.WriteByte(pattern[i])
 				}
 				continue
 			}
@@ -302,12 +299,12 @@ func compileGlob(pattern string) (*globMatcher, string, error) {
 			ops = append(ops, globOp{kind: opCharClass, charClass: cls})
 			staticDir = false
 			i = next
-		case cc[i] == '{':
-			alts, next, ok := parseAlternatives(cc, i)
+		case pattern[i] == '{':
+			alts, next, ok := parseAlternatives(pattern, i)
 			if !ok {
-				literal = append(literal, cc[i])
+				literal.WriteByte(pattern[i])
 				if staticDir {
-					dirmask.WriteRune(cc[i])
+					dirmask.WriteByte(pattern[i])
 				}
 				continue
 			}
@@ -315,12 +312,12 @@ func compileGlob(pattern string) (*globMatcher, string, error) {
 			ops = append(ops, globOp{kind: opAlternatives, alternatives: alts})
 			staticDir = false
 			i = next
-		case i < len(cc)-1 && cc[i] == '!' && cc[i+1] == '(':
-			chars, next, ok := parseNotChars(cc, i)
+		case i < len(pattern)-1 && pattern[i] == '!' && pattern[i+1] == '(':
+			chars, next, ok := parseNotChars(pattern, i)
 			if !ok {
-				literal = append(literal, cc[i])
+				literal.WriteByte(pattern[i])
 				if staticDir {
-					dirmask.WriteRune(cc[i])
+					dirmask.WriteByte(pattern[i])
 				}
 				continue
 			}
@@ -331,15 +328,15 @@ func compileGlob(pattern string) (*globMatcher, string, error) {
 			staticDir = false
 			i = next
 		default:
-			literal = append(literal, cc[i])
+			literal.WriteByte(pattern[i])
 			if staticDir {
-				dirmask.WriteRune(cc[i])
+				dirmask.WriteByte(pattern[i])
 			}
 		}
 	}
 
 	flushLiteral()
-	if len(cc) > 0 && cc[len(cc)-1] == '/' {
+	if len(pattern) > 0 && pattern[len(pattern)-1] == '/' {
 		ops = append(ops, globOp{kind: opStar})
 	}
 	return &globMatcher{
@@ -348,15 +345,15 @@ func compileGlob(pattern string) (*globMatcher, string, error) {
 	}, dirmask.String(), nil
 }
 
-func parseCharClass(cc []rune, start int) (*charClass, int, bool, error) {
+func parseCharClass(pattern string, start int) (*charClass, int, bool, error) {
 	end := start + 1
-	for end < len(cc) && cc[end] != ']' {
+	for end < len(pattern) && pattern[end] != ']' {
 		end++
 	}
-	if end >= len(cc) {
+	if end >= len(pattern) {
 		return nil, 0, false, nil
 	}
-	content := cc[start+1 : end]
+	content := pattern[start+1 : end]
 	if len(content) == 0 {
 		return nil, 0, false, nil
 	}
@@ -390,36 +387,36 @@ func parseCharClass(cc []rune, start int) (*charClass, int, bool, error) {
 	return cls, end, true, nil
 }
 
-func parseAlternatives(cc []rune, start int) ([][]rune, int, bool) {
+func parseAlternatives(pattern string, start int) ([]string, int, bool) {
 	var (
-		alternatives [][]rune
-		current      []rune
+		alternatives []string
+		current      strings.Builder
 	)
-	for i := start + 1; i < len(cc); i++ {
-		switch cc[i] {
+	for i := start + 1; i < len(pattern); i++ {
+		switch pattern[i] {
 		case ',':
-			alternatives = append(alternatives, append([]rune(nil), current...))
-			current = current[:0]
+			alternatives = append(alternatives, current.String())
+			current.Reset()
 		case '}':
-			alternatives = append(alternatives, append([]rune(nil), current...))
+			alternatives = append(alternatives, current.String())
 			if len(alternatives) == 0 {
 				return nil, 0, false
 			}
 			return alternatives, i, true
 		default:
-			current = append(current, cc[i])
+			current.WriteByte(pattern[i])
 		}
 	}
 	return nil, 0, false
 }
 
-func parseNotChars(cc []rune, start int) ([]rune, int, bool) {
-	var chars []rune
-	for i := start + 2; i < len(cc); i++ {
-		if cc[i] == ')' {
+func parseNotChars(pattern string, start int) ([]byte, int, bool) {
+	var chars []byte
+	for i := start + 2; i < len(pattern); i++ {
+		if pattern[i] == ')' {
 			return chars, i, true
 		}
-		chars = append(chars, cc[i])
+		chars = append(chars, pattern[i])
 	}
 	return nil, 0, false
 }
@@ -428,10 +425,10 @@ func (m *globMatcher) Match(name string) bool {
 	if m == nil {
 		return false
 	}
-	return m.match([]rune(name), 0, 0)
+	return m.match(name, 0, 0)
 }
 
-func (m *globMatcher) match(name []rune, opIndex, nameIndex int) bool {
+func (m *globMatcher) match(name string, opIndex, nameIndex int) bool {
 	if opIndex == len(m.ops) {
 		return nameIndex == len(name)
 	}
@@ -461,7 +458,7 @@ func (m *globMatcher) match(name []rune, opIndex, nameIndex int) bool {
 	return false
 }
 
-func (m *globMatcher) matchStar(name []rune, opIndex, nameIndex int, stop rune) bool {
+func (m *globMatcher) matchStar(name string, opIndex, nameIndex int, stop byte) bool {
 	for i := nameIndex; ; i++ {
 		if m.match(name, opIndex+1, i) {
 			return true
@@ -469,13 +466,13 @@ func (m *globMatcher) matchStar(name []rune, opIndex, nameIndex int, stop rune) 
 		if i >= len(name) || name[i] == '/' {
 			return false
 		}
-		if stop != 0 && sameRune(name[i], stop, m.caseInsensitive) {
+		if stop != 0 && sameByte(name[i], stop, m.caseInsensitive) {
 			return false
 		}
 	}
 }
 
-func (m *globMatcher) matchDoubleStarSlash(name []rune, opIndex, nameIndex int) bool {
+func (m *globMatcher) matchDoubleStarSlash(name string, opIndex, nameIndex int) bool {
 	if m.match(name, opIndex+1, nameIndex) {
 		return true
 	}
@@ -487,22 +484,25 @@ func (m *globMatcher) matchDoubleStarSlash(name []rune, opIndex, nameIndex int) 
 	return false
 }
 
-func (m *globMatcher) hasPrefix(name, prefix []rune) bool {
+func (m *globMatcher) hasPrefix(name, prefix string) bool {
 	if len(prefix) > len(name) {
 		return false
 	}
-	for i, r := range prefix {
-		if !sameRune(name[i], r, m.caseInsensitive) {
+	if !m.caseInsensitive {
+		return strings.HasPrefix(name, prefix)
+	}
+	for i := 0; i < len(prefix); i++ {
+		if !sameByte(name[i], prefix[i], m.caseInsensitive) {
 			return false
 		}
 	}
 	return true
 }
 
-func (c *charClass) match(r rune, caseInsensitive bool) bool {
+func (c *charClass) match(r byte, caseInsensitive bool) bool {
 	matched := false
 	for _, item := range c.items {
-		if runeInRange(r, item.lo, item.hi, caseInsensitive) {
+		if byteInRange(r, item.lo, item.hi, caseInsensitive) {
 			matched = true
 			break
 		}
@@ -513,19 +513,26 @@ func (c *charClass) match(r rune, caseInsensitive bool) bool {
 	return matched
 }
 
-func runeInRange(r, lo, hi rune, caseInsensitive bool) bool {
+func byteInRange(r, lo, hi byte, caseInsensitive bool) bool {
 	if !caseInsensitive {
 		return lo <= r && r <= hi
 	}
-	r = unicode.ToLower(r)
-	lo = unicode.ToLower(lo)
-	hi = unicode.ToLower(hi)
+	r = lowerASCII(r)
+	lo = lowerASCII(lo)
+	hi = lowerASCII(hi)
 	return lo <= r && r <= hi
 }
 
-func sameRune(a, b rune, caseInsensitive bool) bool {
+func sameByte(a, b byte, caseInsensitive bool) bool {
 	if !caseInsensitive {
 		return a == b
 	}
-	return unicode.ToLower(a) == unicode.ToLower(b)
+	return lowerASCII(a) == lowerASCII(b)
+}
+
+func lowerASCII(b byte) byte {
+	if 'A' <= b && b <= 'Z' {
+		return b + ('a' - 'A')
+	}
+	return b
 }
