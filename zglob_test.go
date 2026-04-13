@@ -244,3 +244,80 @@ func TestRuneMatcherUnicodeCaseInsensitive(t *testing.T) {
 		t.Fatal("expected Unicode case-insensitive match")
 	}
 }
+
+func TestRuneMatcherUnicodeCharClassCaseInsensitive(t *testing.T) {
+	ops, _, err := compileRuneGlob("[Å-Æ]*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &globMatcher{caseInsensitive: true, rops: ops}
+	if !m.Match("æon") {
+		t.Fatal("expected Unicode char class case-insensitive match")
+	}
+}
+
+func TestByteMatcherASCIICharClassCaseInsensitive(t *testing.T) {
+	matcher, _, err := compileGlob("[A-C]*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	matcher = &globMatcher{caseInsensitive: true, ops: matcher.ops}
+	if !matcher.match("bark", 0, 0) {
+		t.Fatal("expected ASCII byte matcher to match")
+	}
+}
+
+func TestEnvName(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+		ok   bool
+	}{
+		{"$HOME", "HOME", true},
+		{"$(HOME)", "HOME", true},
+		{"$H0ME_1", "H0ME_1", true},
+		{"$9HOME", "", false},
+		{"$()", "", false},
+		{"$(HOME", "", false},
+		{"HOME", "", false},
+		{"$HOME/x", "", false},
+	}
+	for _, tt := range tests {
+		got, ok := envName(tt.in)
+		if got != tt.want || ok != tt.ok {
+			t.Fatalf("envName(%q) = (%q, %v), want (%q, %v)", tt.in, got, ok, tt.want, tt.ok)
+		}
+	}
+}
+
+func TestNewExpandsEnvSegments(t *testing.T) {
+	const key = "ZGLOB_TEST_HOME"
+	const value = "/tmp/zglob-home"
+	old, had := os.LookupEnv(key)
+	if err := os.Setenv(key, value); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if had {
+			_ = os.Setenv(key, old)
+		} else {
+			_ = os.Unsetenv(key)
+		}
+	}()
+
+	z, err := New("$" + key + "/foo/*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := filepath.ToSlash(z.root); got != value+"/foo" {
+		t.Fatalf("root = %q, want %q", got, value+"/foo")
+	}
+
+	z, err = New("$(" + key + ")/foo/*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := filepath.ToSlash(z.root); got != value+"/foo" {
+		t.Fatalf("root = %q, want %q", got, value+"/foo")
+	}
+}
