@@ -233,3 +233,14 @@ func BenchmarkGlob(b *testing.B) {
 		}
 	}
 }
+
+func TestRuneMatcherUnicodeCaseInsensitive(t *testing.T) {
+	ops, _, err := compileRuneGlob("Å*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &globMatcher{caseInsensitive: true, rops: ops}
+	if !m.Match("åland") {
+		t.Fatal("expected Unicode case-insensitive match")
+	}
+}
