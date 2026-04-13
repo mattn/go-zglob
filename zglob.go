@@ -16,7 +16,7 @@ import (
 
 var (
 	envre = regexp.MustCompile(`^(\$[a-zA-Z][a-zA-Z0-9_]+|\$\([a-zA-Z][a-zA-Z0-9_]+\))$`)
-	mu    sync.Mutex
+	cache sync.Map
 )
 
 type zenv struct {
@@ -47,6 +47,20 @@ func toSlash(path string) string {
 }
 
 func New(pattern string) (*zenv, error) {
+	if cached, ok := cache.Load(pattern); ok {
+		z := cached.(*zenv)
+		return z, nil
+	}
+
+	z, err := newEnv(pattern)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := cache.LoadOrStore(pattern, z)
+	return actual.(*zenv), nil
+}
+
+func newEnv(pattern string) (*zenv, error) {
 	globmask := ""
 	root := ""
 	for n, i := range strings.Split(toSlash(pattern), "/") {
@@ -232,12 +246,13 @@ func glob(pattern string, followSymlinks bool) ([]string, error) {
 	}
 	relative := !filepath.IsAbs(pattern)
 	matches := []string{}
+	var mu sync.Mutex
 
 	err = fastwalk.FastWalk(zenv.root, func(path string, info os.FileMode) error {
 		if zenv.root == "." && len(zenv.root) < len(path) {
 			path = path[len(zenv.root)+1:]
 		}
-		path = filepath.ToSlash(path)
+		path = walkPathToSlash(path)
 
 		if followSymlinks && info == os.ModeSymlink {
 			followedPath, err := filepath.EvalSymlinks(path)
@@ -265,7 +280,7 @@ func glob(pattern string, followSymlinks bool) ([]string, error) {
 		}
 
 		if zenv.fre.MatchString(path) {
-			if relative && filepath.IsAbs(path) {
+			if relative && zenv.root != "." && filepath.IsAbs(path) {
 				path = path[len(zenv.root)+1:]
 			}
 			mu.Lock()
@@ -305,4 +320,11 @@ func (z *zenv) Match(name string) bool {
 		return true
 	}
 	return false
+}
+
+func walkPathToSlash(path string) string {
+	if filepath.Separator == '/' {
+		return path
+	}
+	return filepath.ToSlash(path)
 }
