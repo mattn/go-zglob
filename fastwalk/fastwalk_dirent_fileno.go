@@ -6,8 +6,15 @@
 
 package fastwalk
 
-import "syscall"
+import (
+	"syscall"
+	"unsafe"
+)
 
-func direntInode(dirent *syscall.Dirent) uint64 {
-	return uint64(dirent.Fileno)
+func direntInodeFrom(buf []byte) uint64 {
+	u, ok := readUint(buf, unsafe.Offsetof(syscall.Dirent{}.Fileno), unsafe.Sizeof(syscall.Dirent{}.Fileno))
+	if !ok {
+		return 0
+	}
+	return u
 }

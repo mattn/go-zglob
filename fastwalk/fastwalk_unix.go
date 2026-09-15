@@ -67,20 +67,61 @@ func readDir(dirName string, fn func(dirName, entName string, typ os.FileMode) e
 	}
 }
 
+// readUint reads a native-endian unsigned integer of size bytes at off.
+func readUint(buf []byte, off, size uintptr) (uint64, bool) {
+	if uintptr(len(buf)) < off+size {
+		return 0, false
+	}
+	ptr := unsafe.Pointer(&buf[off])
+	switch size {
+	case 1:
+		return uint64(*(*uint8)(ptr)), true
+	case 2:
+		return uint64(*(*uint16)(ptr)), true
+	case 4:
+		return uint64(*(*uint32)(ptr)), true
+	case 8:
+		return *(*uint64)(ptr), true
+	default:
+		return 0, false
+	}
+}
+
 func parseDirEnt(buf []byte) (consumed int, name string, typ os.FileMode) {
-	// golang.org/issue/15653
-	dirent := (*syscall.Dirent)(unsafe.Pointer(&buf[0]))
-	if v := unsafe.Offsetof(dirent.Reclen) + unsafe.Sizeof(dirent.Reclen); uintptr(len(buf)) < v {
+	// Read fields from the byte slice. Do not overlay *syscall.Dirent:
+	// the remaining buffer is only Reclen bytes (often ~32), while
+	// Dirent.Name is 1024 bytes on Darwin. That conversion trips
+	// checkptr ("converted pointer straddles multiple allocations")
+	// — see mattn/go-zglob#49 and golang/go#41941.
+	reclenOff := unsafe.Offsetof(syscall.Dirent{}.Reclen)
+	reclenSize := unsafe.Sizeof(syscall.Dirent{}.Reclen)
+	if v := reclenOff + reclenSize; uintptr(len(buf)) < v {
 		panic(fmt.Sprintf("buf size of %d smaller than dirent header size %d", len(buf), v))
 	}
-	if len(buf) < int(dirent.Reclen) {
-		panic(fmt.Sprintf("buf size %d < record length %d", len(buf), dirent.Reclen))
+	reclen64, ok := readUint(buf, reclenOff, reclenSize)
+	if !ok {
+		panic(fmt.Sprintf("buf size of %d smaller than dirent header", len(buf)))
 	}
-	consumed = int(dirent.Reclen)
-	if direntInode(dirent) == 0 { // File absent in directory.
+	reclen := int(reclen64)
+	if len(buf) < reclen {
+		panic(fmt.Sprintf("buf size %d < record length %d", len(buf), reclen))
+	}
+	if reclen == 0 {
+		return len(buf), "", 0
+	}
+	consumed = reclen
+	rec := buf[:reclen]
+
+	if direntInodeFrom(rec) == 0 { // File absent in directory.
 		return
 	}
-	switch dirent.Type {
+
+	typeOff := unsafe.Offsetof(syscall.Dirent{}.Type)
+	var dt byte
+	if uintptr(len(rec)) > typeOff {
+		dt = rec[typeOff]
+	}
+	switch dt {
 	case syscall.DT_REG:
 		typ = 0
 	case syscall.DT_DIR:
@@ -104,10 +145,14 @@ func parseDirEnt(buf []byte) (consumed int, name string, typ os.FileMode) {
 		return
 	}
 
-	nameBuf := (*[unsafe.Sizeof(dirent.Name)]byte)(unsafe.Pointer(&dirent.Name[0]))
-	nameLen := bytes.IndexByte(nameBuf[:], 0)
+	nameOff := unsafe.Offsetof(syscall.Dirent{}.Name)
+	if uintptr(len(rec)) <= nameOff {
+		return
+	}
+	nameBuf := rec[nameOff:]
+	nameLen := bytes.IndexByte(nameBuf, 0)
 	if nameLen < 0 {
-		panic("failed to find terminating 0 byte in dirent")
+		nameLen = len(nameBuf)
 	}
 
 	// Special cases for common things:
