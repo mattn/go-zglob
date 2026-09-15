@@ -33,9 +33,9 @@ var testGlobs = []testZGlob{
 	{`foo/b[a-z]*`, []string{`foo/bar`, `foo/baz`}, ""},
 	{`foo/b[c-z]*`, []string{}, ""},
 	{`foo/b[z-c]*`, []string{}, "error parsing regexp"},
-	{`foo/**`, []string{`foo/bar`, `foo/baz`}, ""},
-	{`f*o/**`, []string{`foo/bar`, `foo/baz`}, ""},
-	{`*oo/**`, []string{`foo/bar`, `foo/baz`, `hoo/bar`}, ""},
+	{`foo/**`, []string{`foo/bar`, `foo/bar/baz`, `foo/bar/baz.txt`, `foo/bar/baz/noo.txt`, `foo/baz`}, ""},
+	{`f*o/**`, []string{`foo/bar`, `foo/bar/baz`, `foo/bar/baz.txt`, `foo/bar/baz/noo.txt`, `foo/baz`}, ""},
+	{`*oo/**`, []string{`foo/bar`, `foo/bar/baz`, `foo/bar/baz.txt`, `foo/bar/baz/noo.txt`, `foo/baz`, `hoo/bar`}, ""},
 	{`*oo/b*`, []string{`foo/bar`, `foo/baz`, `hoo/bar`}, ""},
 	{`*oo/bar`, []string{`foo/bar`, `hoo/bar`}, ""},
 	{`*oo/*z`, []string{`foo/baz`}, ""},
@@ -127,6 +127,31 @@ func TestGlobAbs(t *testing.T) {
 		}
 		if !check(expected, got) {
 			t.Errorf(`zglob failed: pattern %q(%q): expected %v but got %v`, pattern, tmpdir, expected, got)
+		}
+	}
+}
+
+func TestMatchTrailingDoubleStar(t *testing.T) {
+	cases := []struct {
+		pattern, name string
+		want          bool
+	}{
+		{`/**`, `/abc/def/123`, true},
+		{`/**`, `/abc.txt`, true},
+		{`/*`, `/abc.txt`, true},
+		{`/*`, `/abc/def/123`, false},
+		{`foo/**`, `foo/bar`, true},
+		{`foo/**`, `foo/bar/baz`, true},
+		{`foo/*`, `foo/bar/baz`, false},
+	}
+	for _, c := range cases {
+		got, err := Match(c.pattern, c.name)
+		if err != nil {
+			t.Errorf("Match(%q, %q) error: %v", c.pattern, c.name, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("Match(%q, %q) = %v, want %v", c.pattern, c.name, got, c.want)
 		}
 	}
 }

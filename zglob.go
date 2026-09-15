@@ -103,9 +103,15 @@ func New(pattern string) (*zenv, error) {
 			}
 		} else if cc[i] == '*' {
 			staticDir = false
-			if i < len(cc)-2 && cc[i+1] == '*' && cc[i+2] == '/' {
-				filemask.WriteString("(.*/)?")
-				i += 2
+			if i+1 < len(cc) && cc[i+1] == '*' {
+				if i+2 < len(cc) && cc[i+2] == '/' {
+					filemask.WriteString("(.*/)?")
+					i += 2
+				} else {
+					// Trailing ** (issue #38): match across slashes.
+					filemask.WriteString(".*")
+					i++
+				}
 			} else {
 				filemask.WriteString("[^/]*")
 			}
