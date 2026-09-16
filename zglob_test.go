@@ -143,6 +143,11 @@ func TestMatchTrailingDoubleStar(t *testing.T) {
 		{`foo/**`, `foo/bar`, true},
 		{`foo/**`, `foo/bar/baz`, true},
 		{`foo/*`, `foo/bar/baz`, false},
+		{`**`, `a/b/c.go`, true},
+		{`**.go`, `c.go`, true},
+		{`**.go`, `a/b/c.go`, false},
+		{`foo**`, `foobar`, true},
+		{`foo**`, `foobar/baz`, false},
 	}
 	for _, c := range cases {
 		got, err := Match(c.pattern, c.name)

@@ -107,9 +107,13 @@ func New(pattern string) (*zenv, error) {
 				if i+2 < len(cc) && cc[i+2] == '/' {
 					filemask.WriteString("(.*/)?")
 					i += 2
-				} else {
-					// Trailing ** (issue #38): match across slashes.
+				} else if i+2 == len(cc) && (i == 0 || cc[i-1] == '/') {
+					// Trailing ** as a whole path component (issue #38).
 					filemask.WriteString(".*")
+					i++
+				} else {
+					// **.go / foo**: same as a single *, not recursive.
+					filemask.WriteString("[^/]*")
 					i++
 				}
 			} else {
