@@ -131,6 +131,64 @@ func TestGlobAbs(t *testing.T) {
 	}
 }
 
+func TestGlobCharacterClasses(t *testing.T) {
+	tmpdir, savedCwd := setup()
+	defer os.RemoveAll(tmpdir)
+	defer os.Chdir(savedCwd)
+
+	cases := []testZGlob{
+		{`foo/b[a][r]`, []string{`foo/bar`}, ""},
+		{`foo/ba[r-z]`, []string{`foo/bar`, `foo/baz`}, ""},
+		{`[fh]oo/bar`, []string{`foo/bar`, `hoo/bar`}, ""},
+		{`f[o]o/bar/baz.tx[t]`, []string{`foo/bar/baz.txt`}, ""},
+		{`zzz/bar/ba[z]/zoo.jpg`, []string{`zzz/bar/baz/zoo.jpg`}, ""},
+		{`zzz/bar/baz/[jz]oo.[jp][pn]g`, []string{`zzz/bar/baz/joo.png`, `zzz/bar/baz/zoo.jpg`}, ""},
+		{`foo/b[c-z]`, []string{}, ""},
+		{`foo/b[z-c]`, nil, "error parsing regexp"},
+	}
+	for _, test := range cases {
+		for _, absolute := range []bool{false, true} {
+			pattern := test.pattern
+			expected := append([]string{}, test.expected...)
+			if absolute {
+				pattern = toSlash(filepath.Join(tmpdir, pattern))
+				for i, name := range expected {
+					expected[i] = filepath.ToSlash(filepath.Join(tmpdir, name))
+				}
+			}
+			for _, globFn := range []struct {
+				name string
+				fn   func(string) ([]string, error)
+			}{
+				{"Glob", Glob},
+				{"GlobFollowSymlinks", GlobFollowSymlinks},
+			} {
+				t.Run(globFn.name+"/"+pattern, func(t *testing.T) {
+					got, err := globFn.fn(pattern)
+					if test.err != "" {
+						if err == nil || !strings.Contains(err.Error(), test.err) {
+							t.Fatalf("got error %v, want %q", err, test.err)
+						}
+						return
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !check(got, expected) {
+						t.Errorf("got %v, want %v", got, expected)
+					}
+				})
+			}
+			for _, name := range expected {
+				matched, err := Match(pattern, name)
+				if err != nil || !matched {
+					t.Errorf("Match(%q, %q) = %v, %v", pattern, name, matched, err)
+				}
+			}
+		}
+	}
+}
+
 func TestMatchTrailingDoubleStar(t *testing.T) {
 	cases := []struct {
 		pattern, name string
@@ -148,6 +206,38 @@ func TestMatchTrailingDoubleStar(t *testing.T) {
 		{`**.go`, `a/b/c.go`, false},
 		{`foo**`, `foobar`, true},
 		{`foo**`, `foobar/baz`, false},
+	}
+	for _, c := range cases {
+		got, err := Match(c.pattern, c.name)
+		if err != nil {
+			t.Errorf("Match(%q, %q) error: %v", c.pattern, c.name, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("Match(%q, %q) = %v, want %v", c.pattern, c.name, got, c.want)
+		}
+	}
+}
+
+func TestMatchCharacterClasses(t *testing.T) {
+	cases := []struct {
+		pattern, name string
+		want          bool
+	}{
+		{`[ab]`, `a`, true},
+		{`[ab]`, `b`, true},
+		{`[ab]`, `c`, false},
+		{`[a-z]`, `z`, true},
+		{`*`, `a`, true},
+		{`[ab]`, ``, false},
+		{`*`, ``, false},
+		{`*`, `.`, false},
+		{`[ab]`, `aa`, false},
+		{`[ab][ab]`, `ab`, true},
+		{`[ab]`, `a/b`, false},
+		{`foo/[ab]`, `foo/a`, true},
+		{`foo/[ab]`, `foo`, false},
+		{`foo/*`, `foo`, false},
 	}
 	for _, c := range cases {
 		got, err := Match(c.pattern, c.name)
