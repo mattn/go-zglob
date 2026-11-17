@@ -50,7 +50,7 @@ func New(pattern string) (*zenv, error) {
 	globmask := ""
 	root := ""
 	for n, i := range strings.Split(toSlash(pattern), "/") {
-		if root == "" && strings.ContainsAny(i, "*{") {
+		if root == "" && strings.ContainsAny(i, "*{[") {
 			if globmask == "" {
 				root = "."
 			} else {
@@ -307,7 +307,7 @@ func (z *zenv) Match(name string) bool {
 
 	name = filepath.ToSlash(name)
 
-	if name == "." || len(name) <= len(z.root) {
+	if name == "." || name == "" || (z.root != "." && len(name) <= len(z.root)) {
 		return false
 	}
 
