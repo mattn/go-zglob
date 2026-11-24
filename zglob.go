@@ -33,7 +33,7 @@ func toSlash(path string) string {
 	var buf bytes.Buffer
 	cc := []rune(path)
 	for i := 0; i < len(cc); i++ {
-		if i < len(cc)-2 && cc[i] == '\\' && (cc[i+1] == '{' || cc[i+1] == '}') {
+		if i < len(cc)-1 && cc[i] == '\\' && (cc[i+1] == '{' || cc[i+1] == '}') {
 			buf.WriteRune(cc[i])
 			buf.WriteRune(cc[i+1])
 			i++
@@ -95,7 +95,7 @@ func New(pattern string) (*zenv, error) {
 	var filemask strings.Builder
 	staticDir := true
 	for i := 0; i < len(cc); i++ {
-		if i < len(cc)-2 && cc[i] == '\\' {
+		if i < len(cc)-1 && cc[i] == '\\' {
 			i++
 			fmt.Fprintf(&filemask, "[\\x%02X]", cc[i])
 			if staticDir {
