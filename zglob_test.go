@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -51,6 +52,8 @@ var testGlobs = []testZGlob{
 	{`zzz/bar/baz/zoo.{jpg,png}`, []string{`zzz/bar/baz/zoo.jpg`}, ""},
 	{`zzz/bar/{baz,z}/zoo.jpg`, []string{`zzz/bar/baz/zoo.jpg`}, ""},
 	{`zzz/nar/\{noo,x\}/joo.png`, []string{`zzz/nar/{noo,x}/joo.png`}, ""},
+	{`zzz/nar/\{noo,x\}`, []string{`zzz/nar/{noo,x}`}, ""},
+	{`zzz/nar/\{界\}`, []string{`zzz/nar/{界}`}, ""},
 }
 
 func fatalIf(err error) {
@@ -75,6 +78,7 @@ func setup() (string, string) {
 	fatalIf(ioutil.WriteFile(filepath.Join(tmpdir, "zzz/bar/baz/joo.png"), []byte{}, 0644))
 	fatalIf(os.MkdirAll(filepath.Join(tmpdir, "zzz/nar/{noo,x}"), 0755))
 	fatalIf(ioutil.WriteFile(filepath.Join(tmpdir, "zzz/nar/{noo,x}/joo.png"), []byte{}, 0644))
+	fatalIf(os.MkdirAll(filepath.Join(tmpdir, "zzz/nar/{界}"), 0755))
 
 	curdir, err := os.Getwd()
 	fatalIf(err)
@@ -262,6 +266,36 @@ func TestMatch(t *testing.T) {
 			if !got {
 				t.Errorf("%q should match with %q", f, test.pattern)
 			}
+		}
+	}
+}
+
+func TestMatchTrailingEscape(t *testing.T) {
+	cases := []struct {
+		pattern, name string
+		want          bool
+	}{
+		{`foo/*\{`, `foo/bar{`, true},
+		{`foo/*\}`, `foo/bar}`, true},
+		{`foo/*\}`, `foo/bar`, false},
+	}
+	if runtime.GOOS != "windows" {
+		// Windows uses backslashes as path separators, except before braces.
+		cases = append(cases, []struct {
+			pattern, name string
+			want          bool
+		}{
+			{`foo/a\*`, `foo/a*`, true},
+			{`foo/a\*`, `foo/abc`, false},
+			{`foo/\[ab\]`, `foo/[ab]`, true},
+			{`foo/*\`, `foo/bar\`, true},
+			{`foo/*\`, `foo/bar`, false},
+		}...)
+	}
+	for _, c := range cases {
+		got, err := Match(c.pattern, c.name)
+		if err != nil || got != c.want {
+			t.Errorf("Match(%q, %q) = %v, %v; want %v, nil", c.pattern, c.name, got, err, c.want)
 		}
 	}
 }
