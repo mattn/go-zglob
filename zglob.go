@@ -132,6 +132,10 @@ func New(pattern string) (*zenv, error) {
 			}
 			if pattern := b.String(); pattern != "" {
 				filemask.WriteByte('[')
+				if len(pattern) > 1 && pattern[0] == '!' {
+					// [!abc] negates the class, same as [^abc].
+					pattern = "^" + pattern[1:]
+				}
 				filemask.WriteString(pattern)
 				filemask.WriteByte(']')
 				continue
